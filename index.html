@@ -37,6 +37,7 @@
       <h2 id="title">Snake</h2>
       <p id="msg">Use as setas ou WASD para mover.</p>
       <button id="start">Jogar</button>
+      <small>Maçã +1 &middot; Mamão +2 (a cobra deixa 3 cocôs, que viram mamão após 5 maçãs)</small>
       <small>Espaço: pausar &middot; Enter: jogar/reiniciar</small>
     </div>
   </div>
@@ -52,7 +53,7 @@
   try { best = +localStorage.getItem('snake-best') || 0; } catch (e) {}
   bestEl.textContent = best;
 
-  let snake, dir, nextDir, food, score, timer, steps = 0, state = 'idle'; // idle | running | paused | over
+  let snake, dir, nextDir, food, papayas = [], poops = [], poopQueue = 0, score, timer, steps = 0, state = 'idle'; // idle | running | paused | over
 
   const DIRS = {
     ArrowUp:[0,-1], w:[0,-1], W:[0,-1],
@@ -65,13 +66,38 @@
     snake = [{x:10,y:10},{x:9,y:10},{x:8,y:10}];
     dir = nextDir = [1,0];
     score = 0; steps = 0; scoreEl.textContent = 0;
+    food = null; papayas = []; poops = []; poopQueue = 0;
     placeFood();
+    spawnPapaya();
   }
 
-  function placeFood() {
-    do {
-      food = { x: Math.floor(Math.random()*CELLS), y: Math.floor(Math.random()*CELLS) };
-    } while (snake.some(s => s.x === food.x && s.y === food.y));
+  // sorteia uma casa livre (sem cobra, maçã, mamão ou cocô)
+  function randomFree() {
+    const taken = new Set(snake.map(s => s.x + ',' + s.y));
+    if (food) taken.add(food.x + ',' + food.y);
+    papayas.forEach(p => taken.add(p.x + ',' + p.y));
+    poops.forEach(p => taken.add(p.x + ',' + p.y));
+    const free = [];
+    for (let x = 0; x < CELLS; x++)
+      for (let y = 0; y < CELLS; y++)
+        if (!taken.has(x + ',' + y)) free.push({ x, y });
+    return free.length ? free[Math.floor(Math.random()*free.length)] : null;
+  }
+
+  function placeFood() { food = null; food = randomFree(); }
+
+  function spawnPapaya() {
+    const c = randomFree();
+    if (c) papayas.push(c);
+  }
+
+  // cocôs com a contagem zerada viram mamão (esperam se a cobra estiver em cima)
+  function ripenPoops() {
+    poops = poops.filter(p => {
+      if (p.left > 0 || snake.some(s => s.x === p.x && s.y === p.y)) return true;
+      papayas.push({ x: p.x, y: p.y });
+      return false;
+    });
   }
 
   function interval() { return Math.max(65, 140 - score * 3); }
@@ -119,7 +145,7 @@
     if (state !== 'running') return;
     dir = nextDir;
     const head = { x: snake[0].x + dir[0], y: snake[0].y + dir[1] };
-    const eating = head.x === food.x && head.y === food.y;
+    const eating = !!food && head.x === food.x && head.y === food.y;
     // a cauda sai da casa neste passo, a menos que esteja comendo
     const body = eating ? snake : snake.slice(0, -1);
     if (head.x < 0 || head.y < 0 || head.x >= CELLS || head.y >= CELLS ||
@@ -128,13 +154,27 @@
     }
     steps++;
     snake.unshift(head);
+    const papayaIdx = papayas.findIndex(p => p.x === head.x && p.y === head.y);
     if (eating) {
       score++; scoreEl.textContent = score;
       if (snake.length === CELLS * CELLS) { draw(); return gameOver(); }
       placeFood();
+      poops.forEach(p => p.left--);     // mais uma maçã comida
     } else {
-      snake.pop();
+      const tail = snake.pop();
+      // o mamão não faz crescer: a cobra deixa um cocô onde a cauda estava
+      if (poopQueue > 0 && !poops.some(p => p.x === tail.x && p.y === tail.y)) {
+        poops.push({ x: tail.x, y: tail.y, left: 5 });
+        poopQueue--;
+      }
     }
+    if (papayaIdx >= 0) {
+      papayas.splice(papayaIdx, 1);
+      score += 2; scoreEl.textContent = score;
+      poopQueue += 3;
+      if (!papayas.length) spawnPapaya();
+    }
+    ripenPoops();
     draw();
     schedule();
   }
@@ -146,7 +186,62 @@
     nextDir = d;
   }
 
+  function drawPapaya(p) {
+    const s = CELL/24;
+    ctx.save();
+    ctx.translate(p.x*CELL + CELL/2, p.y*CELL + CELL/2);
+    ctx.rotate(0.6);
+    const g = ctx.createLinearGradient(0, -11*s, 0, 11*s);
+    g.addColorStop(0, '#fdba74');
+    g.addColorStop(0.5, '#f97316');
+    g.addColorStop(1, '#c2410c');
+    ctx.fillStyle = g;
+    ctx.strokeStyle = '#9a3412';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.ellipse(0, 1*s, 6.5*s, 10*s, 0, 0, Math.PI*2);
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,.4)';
+    ctx.beginPath();
+    ctx.ellipse(-2.5*s, -2*s, 1.6*s, 4*s, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.strokeStyle = '#15803d';
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(0, -9*s); ctx.lineTo(0.5*s, -12*s);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawPoop(p) {
+    const s = CELL/24, x = p.x*CELL + CELL/2, y = p.y*CELL + CELL/2;
+    ctx.fillStyle = '#92400e';
+    ctx.strokeStyle = '#451a03';
+    ctx.lineWidth = 1.5;
+    for (const [dy, rx, ry] of [[6, 9, 5], [1, 7, 4.5], [-4, 4.5, 4]]) {
+      ctx.beginPath();
+      ctx.ellipse(x, y + dy*s, rx*s, ry*s, 0, 0, Math.PI*2);
+      ctx.fill(); ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(255,255,255,.3)';
+    ctx.beginPath();
+    ctx.ellipse(x - 3*s, y - 5*s, 1.2*s, 1.8*s, 0, 0, Math.PI*2);
+    ctx.fill();
+    if (p.left > 0) {               // maçãs que faltam para virar mamão
+      ctx.font = 'bold ' + 11*s + 'px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = '#451a03';
+      ctx.strokeText(p.left, x, y + 4*s);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(p.left, x, y + 4*s);
+    }
+  }
+
   function drawApple() {
+    if (!food) return;
     const x = food.x*CELL + CELL/2, y = food.y*CELL + CELL/2 + 1, r = CELL*0.4;
     const g = ctx.createRadialGradient(x - r*0.4, y - r*0.4, 1, x, y, r*1.4);
     g.addColorStop(0, '#f87171');
@@ -244,6 +339,8 @@
       for (let y = 0; y < CELLS; y++)
         if ((x + y) % 2) ctx.fillRect(x*CELL, y*CELL, CELL, CELL);
 
+    poops.forEach(drawPoop);
+    papayas.forEach(drawPapaya);
     drawApple();
     drawSnake();
   }
