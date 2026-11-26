@@ -38,6 +38,7 @@
       <p id="msg">Use as setas ou WASD para mover.</p>
       <button id="start">Jogar</button>
       <small>Maçã +1 &middot; Mamão +2 (a cobra encolhe 3 casas deixando 3 cocôs, que viram um novo mamão após 5 maçãs). Comer cocô = fim de jogo, e encolher até sumir também!</small>
+      <small>Banana verde clareia a cada maçã e amarela com 6 (+3). Se comer verde, faz cocô cinza, que escurece a cada 10 maçãs até virar preto, permanente, e então nasce outra banana.</small>
       <small>Espaço: pausar &middot; Enter: jogar/reiniciar</small>
     </div>
   </div>
@@ -53,7 +54,8 @@
   try { best = +localStorage.getItem('snake-best') || 0; } catch (e) {}
   bestEl.textContent = best;
 
-  let snake, dir, nextDir, food, papaya = null, poops = [], poopQueue = 0, poopLeft = null, score, timer, steps = 0, state = 'idle'; // idle | running | paused | over
+  let snake, dir, nextDir, food, papaya = null, poops = [], poopQueue = [], poopLeft = null,
+      banana = null, grayPoops = [], score, timer, steps = 0, state = 'idle'; // idle | running | paused | over
 
   const DIRS = {
     ArrowUp:[0,-1], w:[0,-1], W:[0,-1],
@@ -66,9 +68,11 @@
     snake = [{x:10,y:10},{x:9,y:10},{x:8,y:10}];
     dir = nextDir = [1,0];
     score = 0; steps = 0; scoreEl.textContent = 0;
-    food = null; papaya = null; poops = []; poopQueue = 0; poopLeft = null;
+    food = null; papaya = null; poops = []; poopQueue = []; poopLeft = null;
+    banana = null; grayPoops = [];
     placeFood();
     spawnPapaya();
+    spawnBanana();
   }
 
   // sorteia uma casa livre (sem cobra, maçã, mamão ou cocô)
@@ -76,7 +80,9 @@
     const taken = new Set(snake.map(s => s.x + ',' + s.y));
     if (food) taken.add(food.x + ',' + food.y);
     if (papaya) taken.add(papaya.x + ',' + papaya.y);
+    if (banana) taken.add(banana.x + ',' + banana.y);
     poops.forEach(p => taken.add(p.x + ',' + p.y));
+    grayPoops.forEach(p => taken.add(p.x + ',' + p.y));
     const free = [];
     for (let x = 0; x < CELLS; x++)
       for (let y = 0; y < CELLS; y++)
@@ -89,10 +95,33 @@
   // só existe um mamão por vez: ele só volta quando os cocôs viram mamão
   function spawnPapaya() { papaya = randomFree(); }
 
+  // banana: nasce verde (idade 0), clareia a cada maçã e amarela com 6 maçãs
+  function spawnBanana() {
+    const c = randomFree();
+    banana = c && { x: c.x, y: c.y, age: 0 };
+  }
+
+  // cocô cinza escurece a cada 10 maçãs e vira preto (permanente) aos 30
+  const GRAYS = ['#d4d4d4', '#a3a3a3', '#737373'];
+
+  // chamada a cada maçã comida
+  function applesEaten() {
+    if (poopLeft > 0) poopLeft--;
+    if (banana) banana.age++;
+    grayPoops.forEach(g => {
+      if (g.black) return;
+      g.age++;
+      if (g.age >= 30) {
+        g.black = true;
+        if (!banana) spawnBanana();     // cocô preto: nova banana em ponto aleatório
+      }
+    });
+  }
+
   // quando as maçãs acabam, todos os cocôs viram UM mamão (num dos cocôs que
   // não esteja sob a cobra; se todos estiverem, espera)
   function ripenPoops() {
-    if (poopLeft === null || poopLeft > 0 || poopQueue > 0) return;
+    if (poopLeft === null || poopLeft > 0 || poopQueue.includes('brown')) return;
     const spot = poops.find(p => !snake.some(s => s.x === p.x && s.y === p.y));
     if (poops.length && !spot) return;
     poops = []; poopLeft = null;
@@ -147,37 +176,53 @@
     const eating = !!food && head.x === food.x && head.y === food.y;
     // a cauda sai da casa neste passo, a menos que esteja comendo
     // casas da cauda que saem neste passo (2 quando a cobra faz cocô e encolhe)
-    const shrinking = !eating && poopQueue > 0 && snake.length > 1;
+    const shrinking = !eating && poopQueue.length > 0 && snake.length > 1;
     const body = eating ? snake : snake.slice(0, shrinking ? -2 : -1);
     if (head.x < 0 || head.y < 0 || head.x >= CELLS || head.y >= CELLS ||
         body.some(s => s.x === head.x && s.y === head.y) ||
-        poops.some(p => p.x === head.x && p.y === head.y)) {  // comeu cocô
+        poops.some(p => p.x === head.x && p.y === head.y) ||
+        grayPoops.some(p => p.x === head.x && p.y === head.y)) {  // comeu cocô
       draw(); return gameOver();
     }
     steps++;
     snake.unshift(head);
     const eatPapaya = !!papaya && head.x === papaya.x && head.y === papaya.y;
+    const eatBanana = !!banana && head.x === banana.x && head.y === banana.y;
     if (eating) {
       score++; scoreEl.textContent = score;
       if (snake.length === CELLS * CELLS) { draw(); return gameOver(); }
       placeFood();
-      if (poopLeft > 0) poopLeft--;     // mais uma maçã comida
+      applesEaten();                    // mais uma maçã comida
     } else {
       let spot = snake.pop();
       // cada cocô encolhe a cobra uma casa e fica onde a cauda estava;
       // se só restar a cabeça, não há mais o que encolher e a cobra morre
-      if (poopQueue > 0) {
+      if (poopQueue.length > 0) {
         if (snake.length <= 1) { draw(); return gameOver('A cobra encolheu até sumir.'); }
         spot = snake.pop();
-        if (!poops.some(p => p.x === spot.x && p.y === spot.y))
-          poops.push({ x: spot.x, y: spot.y });
-        poopQueue--;
+        const type = poopQueue.shift();
+        const occupied = poops.some(p => p.x === spot.x && p.y === spot.y) ||
+                         grayPoops.some(p => p.x === spot.x && p.y === spot.y);
+        if (!occupied) {
+          if (type === 'gray') grayPoops.push({ x: spot.x, y: spot.y, age: 0, black: false });
+          else poops.push({ x: spot.x, y: spot.y });
+        }
       }
     }
     if (eatPapaya) {
       papaya = null;                    // o próximo mamão só vem dos cocôs
       score += 2; scoreEl.textContent = score;
-      poopQueue = 3; poopLeft = 5;
+      poopQueue.push('brown', 'brown', 'brown'); poopLeft = 5;
+    }
+    if (eatBanana) {
+      const ripe = banana.age >= 6;
+      banana = null;
+      if (ripe) {                       // amarela: boa, e outra verde nasce
+        score += 3; scoreEl.textContent = score;
+        spawnBanana();
+      } else {
+        poopQueue.push('gray');         // verde: a cobra faz um cocô cinza
+      }
     }
     ripenPoops();
     draw();
@@ -219,10 +264,39 @@
     ctx.restore();
   }
 
-  function drawPoop(p) {
+  function drawBanana(b) {
+    const s = CELL/24;
+    let fill, stroke;
+    if (b.age >= 6) { fill = '#fde047'; stroke = '#a16207'; }      // madura
+    else {                                                          // verde, clareando
+      const t = Math.min(b.age, 5) / 5, a = [21, 128, 61], c = [190, 242, 100];
+      const m = a.map((v, i) => Math.round(v + (c[i] - v)*t));
+      fill = 'rgb(' + m.join(',') + ')';
+      stroke = 'rgb(' + m.map(v => Math.round(v*0.55)).join(',') + ')';
+    }
+    ctx.save();
+    ctx.translate(b.x*CELL + CELL/2, b.y*CELL + CELL/2);
+    ctx.rotate(-0.35);
+    ctx.fillStyle = fill;
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 1.5;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-9*s, -4*s);
+    ctx.quadraticCurveTo(0, 14*s, 9*s, -4*s);
+    ctx.quadraticCurveTo(0, 2*s, -9*s, -4*s);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#78350f';                                      // pontas
+    ctx.beginPath(); ctx.arc(-9*s, -4*s, 1.8*s, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(9*s, -4*s, 1.8*s, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+
+  function drawPoop(p, fill = '#92400e', stroke = '#451a03', label = poopLeft) {
     const s = CELL/24, x = p.x*CELL + CELL/2, y = p.y*CELL + CELL/2;
-    ctx.fillStyle = '#92400e';
-    ctx.strokeStyle = '#451a03';
+    ctx.fillStyle = fill;
+    ctx.strokeStyle = stroke;
     ctx.lineWidth = 1.5;
     for (const [dy, rx, ry] of [[6, 9, 5], [1, 7, 4.5], [-4, 4.5, 4]]) {
       ctx.beginPath();
@@ -233,15 +307,15 @@
     ctx.beginPath();
     ctx.ellipse(x - 3*s, y - 5*s, 1.2*s, 1.8*s, 0, 0, Math.PI*2);
     ctx.fill();
-    if (poopLeft > 0) {             // maçãs que faltam para virar mamão
+    if (label > 0) {                // maçãs que faltam para virar mamão
       ctx.font = 'bold ' + 11*s + 'px system-ui, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.lineWidth = 3;
       ctx.strokeStyle = '#451a03';
-      ctx.strokeText(poopLeft, x, y + 4*s);
+      ctx.strokeText(label, x, y + 4*s);
       ctx.fillStyle = '#fff';
-      ctx.fillText(poopLeft, x, y + 4*s);
+      ctx.fillText(label, x, y + 4*s);
     }
   }
 
@@ -344,8 +418,12 @@
       for (let y = 0; y < CELLS; y++)
         if ((x + y) % 2) ctx.fillRect(x*CELL, y*CELL, CELL, CELL);
 
-    poops.forEach(drawPoop);
+    poops.forEach(p => drawPoop(p));
+    grayPoops.forEach(g => g.black
+      ? drawPoop(g, '#000', '#94a3b8', 0)
+      : drawPoop(g, GRAYS[Math.floor(g.age / 10)], '#404040', 0));
     if (papaya) drawPapaya(papaya);
+    if (banana) drawBanana(banana);
     drawApple();
     drawSnake();
   }
