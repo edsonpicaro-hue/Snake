@@ -13,7 +13,8 @@
   * { box-sizing: border-box; }
   body { margin:0; min-height:100vh; display:flex; flex-direction:column; align-items:center;
          justify-content:center; gap:12px; background:var(--bg); color:var(--text);
-         font-family:system-ui, sans-serif; user-select:none; }
+         font-family:system-ui, sans-serif; user-select:none;
+         touch-action:none; overscroll-behavior:none; }
   h1 { margin:0; letter-spacing:.2em; color:var(--accent); }
   .hud { display:flex; gap:24px; font-size:1.1rem; }
   .wrap { position:relative; }
@@ -58,7 +59,7 @@
   try { best = +localStorage.getItem('snake-best') || 0; } catch (e) {}
   bestEl.textContent = best;
 
-  let snake, dir, nextDir, food, papaya = null, poops = [], poopQueue = [], poopLeft = null,
+  let snake, dir, dirQueue = [], food, papaya = null, poops = [], poopQueue = [], poopLeft = null,
       banana = null, grayPoops = [], score, timer, steps = 0, state = 'idle'; // idle | running | paused | over
 
   const DIRS = {
@@ -70,7 +71,7 @@
 
   function reset() {
     snake = [{x:10,y:10},{x:9,y:10},{x:8,y:10}];
-    dir = nextDir = [1,0];
+    dir = [1,0]; dirQueue = [];
     score = 0; steps = 0; scoreEl.textContent = 0;
     food = null; papaya = null; poops = []; poopQueue = []; poopLeft = null;
     banana = null; grayPoops = [];
@@ -176,7 +177,7 @@
 
   function tick() {
     if (state !== 'running') return;
-    dir = nextDir;
+    if (dirQueue.length) dir = dirQueue.shift();
     const head = { x: snake[0].x + dir[0], y: snake[0].y + dir[1] };
     const eating = !!food && head.x === food.x && head.y === food.y;
     // a cauda sai da casa neste passo, a menos que esteja comendo
@@ -234,11 +235,13 @@
     schedule();
   }
 
+  // fila de curvas: guarda até 3 viradas rápidas, aplicadas uma por passo
   function turn(d) {
     if (state !== 'running') return;
-    // impede inverter 180 graus
-    if (d[0] === -dir[0] && d[1] === -dir[1]) return;
-    nextDir = d;
+    const last = dirQueue.length ? dirQueue[dirQueue.length - 1] : dir;
+    if (d[0] === -last[0] && d[1] === -last[1]) return;   // impede inverter 180 graus
+    if (d[0] === last[0] && d[1] === last[1]) return;     // já vai nessa direção
+    if (dirQueue.length < 3) dirQueue.push(d);
   }
 
   function drawPapaya(p) {
@@ -443,16 +446,25 @@
     if (state === 'paused') togglePause(); else start();
   });
 
-  // controle por deslizar o dedo
+  // controle por deslizar o dedo: vira assim que o dedo anda ~14px, sem
+  // esperar soltar, e o ponto de partida é renovado a cada curva, então dá
+  // para encadear várias viradas num mesmo gesto. Funciona na tela toda.
+  const SWIPE_MIN = 14;
   let t0 = null;
-  canvas.addEventListener('touchstart', e => { t0 = e.touches[0]; }, { passive: true });
-  canvas.addEventListener('touchend', e => {
+  document.addEventListener('touchstart', e => {
+    if (e.target.closest && e.target.closest('button')) { t0 = null; return; }
+    t0 = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  }, { passive: true });
+  document.addEventListener('touchmove', e => {
     if (!t0) return;
-    const t = e.changedTouches[0], dx = t.clientX - t0.clientX, dy = t.clientY - t0.clientY;
-    if (Math.max(Math.abs(dx), Math.abs(dy)) > 20)
-      turn(Math.abs(dx) > Math.abs(dy) ? [Math.sign(dx), 0] : [0, Math.sign(dy)]);
-    t0 = null;
-  });
+    e.preventDefault();
+    const t = e.touches[0], dx = t.clientX - t0.x, dy = t.clientY - t0.y;
+    if (Math.max(Math.abs(dx), Math.abs(dy)) < SWIPE_MIN) return;
+    turn(Math.abs(dx) > Math.abs(dy) ? [Math.sign(dx), 0] : [0, Math.sign(dy)]);
+    t0 = { x: t.clientX, y: t.clientY };
+  }, { passive: false });
+  document.addEventListener('touchend', () => { t0 = null; });
+  document.addEventListener('touchcancel', () => { t0 = null; });
 
   reset(); draw();
 })();
