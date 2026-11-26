@@ -38,7 +38,7 @@
       <p id="msg">Use as setas ou WASD para mover.</p>
       <button id="start">Jogar</button>
       <small>Maçã +1 &middot; Mamão +2 (a cobra encolhe 3 casas deixando 3 cocôs, que viram um novo mamão após 5 maçãs). Comer cocô = fim de jogo, e encolher até sumir também!</small>
-      <small>Banana verde clareia a cada maçã e amarela com 6 (+3). Se comer verde, faz cocô cinza, que escurece a cada 10 maçãs até virar preto, permanente, e então nasce outra banana.</small>
+      <small>Banana verde clareia a cada maçã e amarela com 6 (+3). Se comer verde, faz cocô cinza, que escurece a cada maçã até virar preto em 5, permanente, e então nasce outra banana.</small>
       <small>Espaço: pausar &middot; Enter: jogar/reiniciar</small>
     </div>
   </div>
@@ -101,8 +101,9 @@
     banana = c && { x: c.x, y: c.y, age: 0 };
   }
 
-  // cocô cinza escurece a cada 10 maçãs e vira preto (permanente) aos 30
+  // cocô cinza escurece com as maçãs e vira preto (permanente) aos BLACK_AT
   const GRAYS = ['#d4d4d4', '#a3a3a3', '#737373'];
+  const BLACK_AT = 5;
 
   // chamada a cada maçã comida
   function applesEaten() {
@@ -111,7 +112,7 @@
     grayPoops.forEach(g => {
       if (g.black) return;
       g.age++;
-      if (g.age >= 30) {
+      if (g.age >= BLACK_AT) {
         g.black = true;
         if (!banana) spawnBanana();     // cocô preto: nova banana em ponto aleatório
       }
@@ -421,7 +422,7 @@
     poops.forEach(p => drawPoop(p));
     grayPoops.forEach(g => g.black
       ? drawPoop(g, '#000', '#94a3b8', 0)
-      : drawPoop(g, GRAYS[Math.floor(g.age / 10)], '#404040', 0));
+      : drawPoop(g, GRAYS[Math.floor(g.age * GRAYS.length / BLACK_AT)], '#404040', 0));
     if (papaya) drawPapaya(papaya);
     if (banana) drawBanana(banana);
     drawApple();
