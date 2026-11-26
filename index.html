@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Snake</title>
+<meta name="theme-color" content="#0f172a">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
 <style>
   :root { --bg:#0f172a; --panel:#1e293b; --text:#e2e8f0; --accent:#22c55e; --food:#ef4444; }
   * { box-sizing: border-box; }
@@ -452,6 +456,12 @@
 
   reset(); draw();
 })();
+</script>
+<script>
+  // registra o service worker (só funciona via http/https, não em file://)
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
 </script>
 </body>
 </html>
