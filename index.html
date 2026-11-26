@@ -37,7 +37,7 @@
       <h2 id="title">Snake</h2>
       <p id="msg">Use as setas ou WASD para mover.</p>
       <button id="start">Jogar</button>
-      <small>Maçã +1 &middot; Mamão +2 (a cobra deixa 3 cocôs, que viram um novo mamão após 5 maçãs)</small>
+      <small>Maçã +1 &middot; Mamão +2 (a cobra encolhe 3 casas deixando 3 cocôs, que viram um novo mamão após 5 maçãs). Comer cocô = fim de jogo!</small>
       <small>Espaço: pausar &middot; Enter: jogar/reiniciar</small>
     </div>
   </div>
@@ -146,9 +146,12 @@
     const head = { x: snake[0].x + dir[0], y: snake[0].y + dir[1] };
     const eating = !!food && head.x === food.x && head.y === food.y;
     // a cauda sai da casa neste passo, a menos que esteja comendo
-    const body = eating ? snake : snake.slice(0, -1);
+    // casas da cauda que saem neste passo (2 quando a cobra faz cocô e encolhe)
+    const shrinking = !eating && poopQueue > 0 && snake.length > 2;
+    const body = eating ? snake : snake.slice(0, shrinking ? -2 : -1);
     if (head.x < 0 || head.y < 0 || head.x >= CELLS || head.y >= CELLS ||
-        body.some(s => s.x === head.x && s.y === head.y)) {
+        body.some(s => s.x === head.x && s.y === head.y) ||
+        poops.some(p => p.x === head.x && p.y === head.y)) {  // comeu cocô
       draw(); return gameOver();
     }
     steps++;
@@ -160,10 +163,12 @@
       placeFood();
       if (poopLeft > 0) poopLeft--;     // mais uma maçã comida
     } else {
-      const tail = snake.pop();
-      // o mamão não faz crescer: a cobra deixa um cocô onde a cauda estava
-      if (poopQueue > 0 && !poops.some(p => p.x === tail.x && p.y === tail.y)) {
-        poops.push({ x: tail.x, y: tail.y });
+      let spot = snake.pop();
+      // cada cocô encolhe a cobra uma casa (mínimo de 2) e fica onde a cauda estava
+      if (poopQueue > 0) {
+        if (snake.length > 2) spot = snake.pop();
+        if (!poops.some(p => p.x === spot.x && p.y === spot.y))
+          poops.push({ x: spot.x, y: spot.y });
         poopQueue--;
       }
     }
