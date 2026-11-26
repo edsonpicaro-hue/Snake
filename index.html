@@ -37,7 +37,7 @@
       <h2 id="title">Snake</h2>
       <p id="msg">Use as setas ou WASD para mover.</p>
       <button id="start">Jogar</button>
-      <small>Maçã +1 &middot; Mamão +2 (a cobra encolhe 3 casas deixando 3 cocôs, que viram um novo mamão após 5 maçãs). Comer cocô = fim de jogo!</small>
+      <small>Maçã +1 &middot; Mamão +2 (a cobra encolhe 3 casas deixando 3 cocôs, que viram um novo mamão após 5 maçãs). Comer cocô = fim de jogo, e encolher até sumir também!</small>
       <small>Espaço: pausar &middot; Enter: jogar/reiniciar</small>
     </div>
   </div>
@@ -121,14 +121,14 @@
     overlay.classList.remove('hidden');
   }
 
-  function gameOver() {
+  function gameOver(reason) {
     state = 'over';
     clearTimeout(timer);
     if (score > best) {
       best = score; bestEl.textContent = best;
       try { localStorage.setItem('snake-best', best); } catch (e) {}
     }
-    showOverlay('Fim de jogo', 'Pontos: ' + score, 'Jogar de novo');
+    showOverlay('Fim de jogo', (reason ? reason + ' ' : '') + 'Pontos: ' + score, 'Jogar de novo');
   }
 
   function togglePause() {
@@ -147,7 +147,7 @@
     const eating = !!food && head.x === food.x && head.y === food.y;
     // a cauda sai da casa neste passo, a menos que esteja comendo
     // casas da cauda que saem neste passo (2 quando a cobra faz cocô e encolhe)
-    const shrinking = !eating && poopQueue > 0 && snake.length > 2;
+    const shrinking = !eating && poopQueue > 0 && snake.length > 1;
     const body = eating ? snake : snake.slice(0, shrinking ? -2 : -1);
     if (head.x < 0 || head.y < 0 || head.x >= CELLS || head.y >= CELLS ||
         body.some(s => s.x === head.x && s.y === head.y) ||
@@ -164,9 +164,11 @@
       if (poopLeft > 0) poopLeft--;     // mais uma maçã comida
     } else {
       let spot = snake.pop();
-      // cada cocô encolhe a cobra uma casa (mínimo de 2) e fica onde a cauda estava
+      // cada cocô encolhe a cobra uma casa e fica onde a cauda estava;
+      // se só restar a cabeça, não há mais o que encolher e a cobra morre
       if (poopQueue > 0) {
-        if (snake.length > 2) spot = snake.pop();
+        if (snake.length <= 1) { draw(); return gameOver('A cobra encolheu até sumir.'); }
+        spot = snake.pop();
         if (!poops.some(p => p.x === spot.x && p.y === spot.y))
           poops.push({ x: spot.x, y: spot.y });
         poopQueue--;
